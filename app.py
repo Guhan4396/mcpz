@@ -8,15 +8,27 @@ import numpy as np
 import os
 import logging
 
-# Configure logging
-logging.basicConfig(level=logging.DEBUG)
+# Configure logging for Vercel
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
+# Initialize Flask app
 app = Flask(__name__)
 
+# For Vercel serverless compatibility
+wsgi_app = app
+
 # Initialize calculator with the CSV file path - use os.path for cross-platform compatibility
-csv_path = os.path.join(os.path.dirname(__file__), 'abstract_risks_with_overall_risk_score.csv')
-calculator = MCPRiskCalculator(csv_path)
+try:
+    csv_path = os.path.join(os.path.dirname(__file__), 'abstract_risks_with_overall_risk_score.csv')
+    calculator = MCPRiskCalculator(csv_path)
+    logger.info("Successfully initialized MCPRiskCalculator")
+except Exception as e:
+    logger.error(f"Error initializing MCPRiskCalculator: {str(e)}")
+    calculator = None
 
 @app.route('/')
 def index():
@@ -25,6 +37,9 @@ def index():
 @app.route('/calculate', methods=['POST'])
 def calculate_risk():
     try:
+        if calculator is None:
+            raise Exception("Risk calculator not properly initialized")
+
         if 'file' in request.files:
             file = request.files['file']
             if file.filename == '':
@@ -69,7 +84,7 @@ def calculate_risk():
         if not suppliers:
             return jsonify({'error': 'No valid supplier data provided'}), 400
 
-        logger.debug(f"Processed suppliers: {suppliers}")
+        logger.info(f"Processing {len(suppliers)} suppliers")
 
         # Convert suppliers list to DataFrame for processing
         supplier_df = pd.DataFrame(suppliers, columns=['Supplier Name', 'Country'])
@@ -94,6 +109,7 @@ def calculate_risk():
         # Convert DataFrame to list of dictionaries for JSON serialization
         json_data = json.loads(df.to_json(orient='records'))
 
+        logger.info("Successfully processed risk calculation request")
         return jsonify({
             'table': table_html,
             'csv': csv_data,
@@ -104,8 +120,6 @@ def calculate_risk():
         logger.error(f"Error in calculate_risk: {str(e)}")
         return jsonify({'error': str(e)}), 400
 
-# Vercel requires the app to be named 'app'
-app = app
-
+# For local development
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True) 
+    app.run(debug=True) 
